@@ -201,10 +201,10 @@ def test_retrieval_evaluator_computes_recall_without_generation(
         {
             "chunk_id": "relevant",
             "source_filename": "book.pdf",
-            "page_start": 75,
-            "page_end": 75,
-            "pdf_page_start": 82,
-            "pdf_page_end": 82,
+                "page_start": 76,
+                "page_end": 76,
+                "pdf_page_start": 84,
+                "pdf_page_end": 84,
             "text": "Listen empathetically.",
         },
         {
@@ -233,8 +233,8 @@ def test_retrieval_evaluator_computes_recall_without_generation(
     result = evaluation_runner.run_evaluation([sample], generate_answers=False)[0]
 
     assert result["recall_at_5"] == 1
-    assert result["retrieved_top5_book_pages"][0] == 75
-    assert result["app_retrieved_book_pages"][0] == 75
+    assert result["retrieved_top5_book_pages"][0] == 76
+    assert result["app_retrieved_book_pages"][0] == 76
     assert result["run_status"] == "completed"
     assert result["answer_text"] == ""
     assert result["latency_scope"] == "retrieval_only"

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
+from typing import Any
+
 import streamlit as st
 
 from config import (
@@ -27,6 +30,17 @@ from src.retriever import RetrievalError, file_sha256, load_index, retrieve
 from src.safety import Route, assess_question
 
 FEEDBACK_PATH = STORAGE_DIR / "feedback.csv"
+NO_PASSAGES_MESSAGE = (
+    "The available book does not provide enough relevant information to answer this "
+    "question. Try asking in a different way, or consult a qualified professional or "
+    "relevant official resource."
+)
+REQUEST_FAILURE_MESSAGE = (
+    "I'm sorry, I couldn't generate a reliable answer right now. Please try again or "
+    "consult an official mental health support resource. This chatbot provides "
+    "educational information only; it does not provide diagnosis, treatment, or "
+    "emergency assistance."
+)
 
 
 @st.cache_resource
@@ -61,21 +75,111 @@ def _feedback() -> None:
                 st.session_state["anonymous_session_id"],
             )
             st.success("Thanks. Your feedback was saved without the question text.")
+
+
+def _request_error_message(error: Exception) -> str:
+    if isinstance(error, (AnswerGenerationError, EmbeddingError)):
+        return (
+            "The Gemini service could not complete this request. Check that the local "
+            "Gemini settings and service are available, then retry."
+        )
+    if isinstance(error, RetrievalError):
+        return (
+            "The local source index could not be used. Retry; if the problem continues, "
+            "rebuild it with `python scripts/build_index.py`."
+        )
+    if isinstance(error, PDFProcessingError):
+        return "The source PDF could not be read. Check the configured PDF, then retry."
+    if isinstance(error, UnsupportedQuestionError):
+        return NO_PASSAGES_MESSAGE
+    return "A temporary problem prevented this request from completing. Please retry."
+
+
+def _process_question(
+    question: str,
+    state: MutableMapping[str, Any] | None = None,
+) -> None:
+    state = state if state is not None else st.session_state
+    question = question.strip()
+    state["question"] = question
+    for key in (
+        "answer",
+        "passages",
+        "simplified_answer",
+        "alternative_answer",
+        "control_error",
+        "safety_route",
+        "request_error",
+        "show_sources",
+    ):
+        state.pop(key, None)
+
+    if not question:
+        return
+
+    decision = assess_question(question)
+    if decision.route != Route.NORMAL:
+        state["answer"] = decision.response
+        state["passages"] = []
+        state["safety_route"] = decision.route.value
+        return
+
+    try:
+        provider, chunks, vectors = get_index()
+        passages = retrieve(
+            question,
+            chunks,
+            vectors,
+            provider,
+            top_k=RETRIEVAL_TOP_K,
+            min_similarity=RETRIEVAL_MIN_SIMILARITY,
+        )
+        if not passages:
+            state["answer"] = NO_PASSAGES_MESSAGE
+            state["passages"] = []
+            return
+
+        state["answer"] = generate_answer(question, passages)
+        state["passages"] = passages
+    except (
+        PDFProcessingError,
+        RetrievalError,
+        EmbeddingError,
+        AnswerGenerationError,
+        UnsupportedQuestionError,
+        OSError,
+    ) as exc:
+        state["answer"] = REQUEST_FAILURE_MESSAGE
+        state["passages"] = []
+        state["request_error"] = _request_error_message(exc)
+
+
+def _retry_question() -> None:
+    question = st.session_state.get("question", "")
+    if question:
+        _process_question(question)
+
+
+def _toggle_sources(state: MutableMapping[str, Any] | None = None) -> None:
+    state = state if state is not None else st.session_state
+    state["show_sources"] = not state.get("show_sources", False)
+
+
 def _render_answer_controls() -> None:
     answer = st.session_state.get("answer")
     passages = st.session_state.get("passages", [])
     if not answer or not passages:
         return
 
-    simplify_col, alternative_col = st.columns(2)
-    if simplify_col.button("Simplify Answer"):
+    simplify_col, alternative_col, sources_col = st.columns(3)
+    if simplify_col.button("Simplify Answer", key="quick_simplify"):
         with st.spinner("Simplifying while retaining citations..."):
             try:
                 st.session_state["simplified_answer"] = simplify_answer(answer, passages)
                 st.session_state["control_error"] = ""
             except AnswerGenerationError as exc:
-                st.session_state["control_error"] = str(exc)
-    if alternative_col.button("Suggest an Alternative"):
+                st.session_state["control_error"] = _request_error_message(exc)
+    if alternative_col.button("Suggest an Alternative", key="quick_alternative"):
         with st.spinner("Checking for another source-supported approach..."):
             try:
                 st.session_state["alternative_answer"] = suggest_alternative(
@@ -83,9 +187,16 @@ def _render_answer_controls() -> None:
                 )
                 st.session_state["control_error"] = ""
             except (AnswerGenerationError, UnsupportedQuestionError) as exc:
-                st.session_state["control_error"] = str(exc)
+                st.session_state["control_error"] = _request_error_message(exc)
+    if sources_col.button(
+        "Hide Sources" if st.session_state.get("show_sources") else "Show Sources",
+        key="quick_sources",
+    ):
+        _toggle_sources()
     if st.session_state.get("control_error"):
-        st.warning(st.session_state["control_error"])
+        st.warning(
+            f"{st.session_state['control_error']} Use the related action button again to retry."
+        )
     if st.session_state.get("simplified_answer"):
         st.markdown("#### Simplified answer")
         st.markdown(st.session_state["simplified_answer"])
@@ -128,8 +239,10 @@ def main() -> None:
 
     st.title("Mental Health Navigator")
     st.write(
-        "Explore general information about stress, emotional wellbeing, peer support, "
-        "and seeking help, grounded in an educational book for students."
+        "Hi, I'm the Mental Health Navigator. I help students find general educational "
+        "information in BCcampus's Starting a Conversation About Mental Health: "
+        "Foundational Training for Students. Ask about stress, wellbeing, peer support, "
+        "or finding help. I don't provide diagnosis or treatment."
     )
     st.warning(
         "Educational information only — not diagnosis, psychotherapy, treatment, or "
@@ -156,55 +269,16 @@ def main() -> None:
         submitted = st.form_submit_button("Find information")
 
     if submitted:
-        st.session_state.pop("answer", None)
-        st.session_state.pop("passages", None)
-        st.session_state.pop("simplified_answer", None)
-        st.session_state.pop("alternative_answer", None)
-        st.session_state["safety_route"] = ""
-        st.session_state["question"] = question.strip()
         if not question.strip():
+            _process_question(question)
             st.warning("Enter a question to get started.")
         else:
-            decision = assess_question(question)
-            if decision.route != Route.NORMAL:
-                st.session_state["answer"] = decision.response
-                st.session_state["passages"] = []
-                st.session_state["safety_route"] = decision.route.value
-            else:
-                with st.spinner("Searching the book and preparing a grounded answer..."):
-                    try:
-                        provider, chunks, vectors = get_index()
-                        passages = retrieve(
-                            question,
-                            chunks,
-                            vectors,
-                            provider,
-                            top_k=RETRIEVAL_TOP_K,
-                            min_similarity=RETRIEVAL_MIN_SIMILARITY,
-                        )
-                        if not passages:
-                            st.session_state["answer"] = (
-                                "The available book does not provide enough relevant "
-                                "information to answer this question. Consider asking a "
-                                "qualified professional or a relevant official resource."
-                            )
-                            st.session_state["passages"] = []
-                        else:
-                            st.session_state["answer"] = generate_answer(question, passages)
-                            st.session_state["passages"] = passages
-                            st.session_state["safety_route"] = ""
-                    except (
-                        PDFProcessingError,
-                        RetrievalError,
-                        EmbeddingError,
-                        AnswerGenerationError,
-                        UnsupportedQuestionError,
-                        OSError,
-                    ) as exc:
-                        st.session_state["answer"] = ""
-                        st.error(f"Unable to answer right now: {exc}")
-                        if not INDEX_PATH.exists():
-                            st.info("Build the local index with `python scripts/build_index.py`.")
+            with st.spinner("Checking your question and preparing a grounded answer..."):
+                _process_question(question)
+
+    if st.session_state.get("request_error"):
+        st.error(st.session_state["request_error"])
+        st.button("Retry", key="retry_question", on_click=_retry_question)
 
     answer = st.session_state.get("answer")
     if answer:
@@ -219,7 +293,10 @@ def main() -> None:
             st.info("This request was handled locally; it was not sent to Gemini.")
         if st.session_state.get("passages"):
             _render_answer_controls()
-            with st.expander("How was this answer generated? Show sources"):
+            with st.expander(
+                "How was this answer generated? Show sources",
+                expanded=st.session_state.get("show_sources", False),
+            ):
                 st.caption(
                     "Retrieved passages are evidence excerpts. Similarity scores are "
                     "ranking aids, not probabilities or calibrated confidence."

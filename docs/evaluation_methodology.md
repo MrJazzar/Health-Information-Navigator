@@ -2,10 +2,10 @@
 
 ## Verified implementation facts
 
-- **LLM and SDK:** Google Gemini API through the official `google-genai` SDK. The local
-  configuration was tested with `gemini-3.5-flash` for generation and
-  `gemini-embedding-2` for embeddings. These account/model settings can change.
-- **Interface/backend:** Python 3.11 and Streamlit.
+- **LLM and SDK:** Google Gemini API through the official `google-genai` SDK. The
+  current local configuration uses stable `gemini-3.6-flash` for generation and
+  `gemini-embedding-2` for embeddings, as listed in the [Google model catalog](https://aistudio.google.com/docs/models).
+- **Interface/backend:** Python 3.13.2 in the project virtual environment and Streamlit.
 - **Source extraction:** `pypdf` extracts per-page text locally. The report retains
   physical PDF pages and printed book page labels where recognized/inferred; it flags
   low-text or image-heavy pages and does not run OCR.
@@ -25,6 +25,20 @@
   comprehensive classifier.
 - **Testing:** pytest offline tests and separate command-line evaluation/safety
   runners. No new runtime package is required for evaluation.
+
+## Current verification status (2026-11-03)
+
+- The supplied 129-page PDF was inspected: 178,464 characters were extracted, with no
+  extraction errors or zero-text pages. Five pages were below the 100-character
+  threshold; OCR was not run.
+- The current index was validated against the PDF hash and chunking settings: 135
+  chunks and 3,072-dimensional vectors with embedding ID
+  `gemini:gemini-embedding-2:task-format-v1`.
+- Full test suite: **42 passed**.
+- One real Python-backend answer-generation call succeeded. Its exact question,
+  response, model, and timestamp are in [gemini_backend_demo.md](gemini_backend_demo.md).
+- Human review of that answer and user-study metrics remain pending. A later redundant
+  embedding rebuild attempt hit Gemini quota; the verified index remained intact.
 
 ## Run the evaluation
 

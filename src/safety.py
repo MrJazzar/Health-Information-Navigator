@@ -87,18 +87,23 @@ _LOCAL_EMERGENCY_PATTERNS = (
         re.I,
     ),
 )
+_EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
+_PHONE_PATTERN = re.compile(r"(?<!\w)\+?\d[\d\s().-]{7,}\d(?!\w)")
 
 URGENT_RESPONSE = (
     "I’m sorry you’re facing this. This tool cannot provide emergency help. If you or "
     "someone else may be in immediate danger, contact your local emergency services now "
     "or go to a nearby emergency department. If you can, tell a trusted person nearby "
-    "and ask them to stay with you while you get help. I do not monitor this chat or "
-    "contact services for you."
+    "and ask them to stay with you while you get help. You can also contact an official "
+    "crisis or campus support service in your area. I do not monitor this chat or contact "
+    "services for you."
 )
 PROFESSIONAL_RESPONSE = (
     "I can share general educational information, but I can’t diagnose, recommend "
-    "medication, or create a treatment plan. A qualified health professional can help "
-    "with advice for your situation."
+    "medication, or create a treatment plan. For support with your situation, contact "
+    "your campus counselling or wellbeing service, a primary-care clinician, or another "
+    "qualified health professional. Use an official service page to find current contact "
+    "details."
 )
 PRIVACY_RESPONSE = (
     "I can’t access or disclose another person’s private health information. Please "
@@ -109,14 +114,31 @@ LOCAL_EMERGENCY_INFORMATION_RESPONSE = (
     "Emergency numbers depend on your location, which this tool does not know. Check "
     "your local government's or emergency service's official information. If someone "
     "may be in immediate danger now, contact local emergency services or go to a nearby "
-    "emergency department. This tool cannot dispatch help."
+    "emergency department. A trusted person nearby may be able to help you find the "
+    "right service. This tool cannot dispatch help or contact anyone for you."
 )
+IDENTIFYING_INFO_RESPONSE = (
+    "Your message appears to include an email address or phone number. Please remove "
+    "contact details before asking again. This request was handled locally and was not "
+    "sent to Gemini. This check does not detect every kind of personal information."
+)
+
+
+def _contains_contact_details(question: str) -> bool:
+    if _EMAIL_PATTERN.search(question):
+        return True
+    return any(
+        sum(character.isdigit() for character in match.group()) >= 10
+        for match in _PHONE_PATTERN.finditer(question)
+    )
 
 
 def assess_question(question: str) -> SafetyDecision:
     for pattern in _URGENT_PATTERNS:
         if pattern.search(question):
             return SafetyDecision(Route.URGENT_SUPPORT, URGENT_RESPONSE)
+    if _contains_contact_details(question):
+        return SafetyDecision(Route.PRIVACY_PROTECTION, IDENTIFYING_INFO_RESPONSE)
     for pattern in _LOCAL_EMERGENCY_PATTERNS:
         if pattern.search(question):
             return SafetyDecision(

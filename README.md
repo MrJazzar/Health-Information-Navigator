@@ -68,13 +68,16 @@ notepad .env
 
 Set `GEMINI_API_KEY` locally, `GEMINI_MODEL` to a generation model, and
 `GEMINI_EMBEDDING_MODEL` to an embedding model supported by your Google AI account.
-The current local `.env` uses `gemini-3.5-flash` and `gemini-embedding-2`, which were
-reported as available and tested with the configured account. Availability may change.
-Do not paste
-keys into source files, issue trackers, or chat logs. The default
+The `.env.example` values are placeholders; choose model names currently supported by
+your account. Do not paste keys into source files, issue trackers, or chat logs. The default
 `EMBEDDING_PROVIDER=gemini` sends each book chunk and user query to the Google Gemini
 API for embedding. Choose `EMBEDDING_PROVIDER=local` only if you prefer the
 download-free but lower-quality local feature-hash baseline.
+
+The current verified configuration uses `gemini-3.6-flash` for generation and
+`gemini-embedding-2` for embeddings. See Google's [model catalog](https://aistudio.google.com/docs/models)
+and the [Gemini Embedding 2 model details](https://aistudio.google.com/docs/models/gemini-embedding-2)
+for current availability and pricing.
 
 ## Build and run
 
@@ -149,6 +152,16 @@ with `python -m evaluation.score_results <results.csv-or-json>`. Reports are tim
 in `evaluation/results/` and excluded from Git. The user test template is
 `evaluation/user_testing_template.csv`; no participant outcomes are pre-populated.
 Targets remain proposed until real review/testing confirms them.
+
+## Week 5 design notes
+
+See [the conversation flow](docs/conversation_flow.md),
+[system architecture](docs/system_architecture.md), and
+[Shneiderman's Eight Golden Rules checklist](docs/shneiderman_golden_rules.md).
+The [Gemini backend demonstration report](docs/gemini_backend_demo.md) records the
+successful live response from the Python backend. The source PDF and Gemini index are
+available and validated, and the full test suite passed (42 tests). Human review of the
+generated response is still pending; see the report for the response and run details.
 
 ## Troubleshooting
 

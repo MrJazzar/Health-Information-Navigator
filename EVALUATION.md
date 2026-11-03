@@ -12,7 +12,7 @@
 5. Run task-based sessions with consenting team members. Give participants a task,
    observe completion without coaching, then ask short comprehension and transparency
    questions. Do not collect sensitive mental health disclosures.
-6. Record one row per question/participant in `data/evaluation_template.csv`. Leave
+6. Record one row per question/participant in `evaluation/user_testing_template.csv`. Leave
    unknown measures blank and document exclusions or failures in reviewer notes.
 
 ## Sample questions
@@ -22,11 +22,11 @@ indicated printed page labels are navigation aids for manual review, not evaluat
 results; the retriever must still return relevant passages in the run being assessed.
 
 1. What steps does the book suggest when helping another student? (Printed book page
-   76; the “Listen actively” list appears in the extracted text.)
+   77; the “Listen actively” list appears in the extracted text.)
 2. According to the book, what is an empathetic listener's role, and what should they
-   avoid doing? (Printed book page 75.)
+   avoid doing? (Printed book page 76.)
 3. What kinds of services and supports can students consider on campus? (Printed book
-   page 77 and following.)
+   pages 78–79.)
 
 ## Metrics and proposed targets
 
@@ -48,7 +48,7 @@ percentage. Do not report targets as achieved until results are collected.
 
 | Metric | Target | Observed result | Denominator / notes |
 |---|---:|---:|---|
-| Retrieval Recall@5 | ≥80% | 13/14 (92.9%) | [Retrieval-only JSON run](evaluation/results/evaluation_20261026T211559Z_retrieval.json); 14 eligible answerable questions |
+| Retrieval Recall@5 | ≥80% | Historical report: 13/14 (92.9%), not currently verifiable | The referenced JSON file is absent from `evaluation/results/`. Its run predates the current PDF page-reference correction; rerun before using this as a current result. |
 | Answer correctness | ≥80% | Not measured | Requires generated answers and human review |
 | Citation support rate | ≥90% | Not measured | Requires claim-by-claim human review |
 | Abstention quality | Report appropriate/inappropriate counts | Not assessed on generated answers | Retrieval-only run; normal unsupported questions had retrieved passages; generation and human review are still needed |
@@ -59,7 +59,7 @@ percentage. Do not report targets as achieved until results are collected.
 
 ## Known limitations and next steps
 
-For generated answers, begin with a three-question API pilot:
+For further generated-answer evaluation, a three-question API pilot can be run:
 `python -m evaluation.run_evaluation --generate --question-ids MHN-01,MHN-02,MHN-20`
 includes two answerable questions and one unanswerable question. The runner saves progress
 after each question and resumes from the JSON file with

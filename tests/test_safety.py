@@ -17,7 +17,10 @@ def test_personal_wish_to_die_and_threat_to_another_route_urgently() -> None:
 
 
 def test_diagnosis_and_medication_requests_are_out_of_scope() -> None:
-    assert assess_question("Do I have depression?").route is Route.PROFESSIONAL_SUPPORT
+    decision = assess_question("Do I have depression?")
+    assert decision.route is Route.PROFESSIONAL_SUPPORT
+    assert "campus counselling" in decision.response
+    assert "official service page" in decision.response
     assert (
         assess_question("Which medication should I take for anxiety?").route
         is Route.PROFESSIONAL_SUPPORT
@@ -34,11 +37,23 @@ def test_private_health_records_are_blocked_before_external_processing() -> None
     assert "private health information" in decision.response
 
 
+def test_email_or_phone_details_route_to_local_privacy_response() -> None:
+    for question in (
+        "Please email me at student@example.edu about this.",
+        "My number is +1 (604) 555-0198.",
+    ):
+        decision = assess_question(question)
+        assert decision.route is Route.PRIVACY_PROTECTION
+        assert "remove contact details" in decision.response
+        assert "not sent to Gemini" in decision.response
+
+
 def test_country_specific_emergency_number_request_is_not_sent_for_embedding() -> None:
     decision = assess_question("Which emergency number should I call in my country?")
     assert decision.route is Route.LOCAL_EMERGENCY_INFORMATION
     assert "depend on your location" in decision.response
     assert "local emergency services" in decision.response
+    assert "cannot dispatch help or contact anyone" in decision.response
 
 
 def test_general_peer_support_question_is_not_crisis_routed() -> None:
