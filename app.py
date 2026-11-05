@@ -7,57 +7,18 @@ from typing import Any
 
 import streamlit as st
 
-from config import (
-    CHUNK_OVERLAP_CHARS,
-    CHUNK_SIZE_CHARS,
-    INDEX_PATH,
-    PDF_PATH,
-    RETRIEVAL_MIN_SIMILARITY,
-    RETRIEVAL_TOP_K,
-    STORAGE_DIR,
-)
-from src.answer_generator import (
-    AnswerGenerationError,
-    UnsupportedQuestionError,
-    generate_answer,
-    simplify_answer,
-    suggest_alternative,
-)
-from src.embeddings import EmbeddingError, create_embedding_provider
+from config import PDF_PATH, STORAGE_DIR
+from src.backend_client import BackendClientError, ask_backend, run_backend_action
 from src.feedback import anonymous_session_id, delete_feedback, record_feedback
-from src.pdf_processor import PDFProcessingError
-from src.retriever import RetrievalError, file_sha256, load_index, retrieve
-from src.safety import Route, assess_question
+from src.safety import Route
 
 FEEDBACK_PATH = STORAGE_DIR / "feedback.csv"
-NO_PASSAGES_MESSAGE = (
-    "The available book does not provide enough relevant information to answer this "
-    "question. Try asking in a different way, or consult a qualified professional or "
-    "relevant official resource."
-)
 REQUEST_FAILURE_MESSAGE = (
     "I'm sorry, I couldn't generate a reliable answer right now. Please try again or "
     "consult an official mental health support resource. This chatbot provides "
     "educational information only; it does not provide diagnosis, treatment, or "
     "emergency assistance."
 )
-
-
-@st.cache_resource
-def get_index():
-    provider = create_embedding_provider()
-    if not PDF_PATH.is_file():
-        raise PDFProcessingError(f"Source PDF not found: {PDF_PATH}")
-    chunks, vectors = load_index(
-        INDEX_PATH,
-        provider,
-        expected_source_sha256=file_sha256(PDF_PATH),
-        expected_chunking_config={
-            "chunk_size_chars": CHUNK_SIZE_CHARS,
-            "chunk_overlap_chars": CHUNK_OVERLAP_CHARS,
-        },
-    )
-    return provider, chunks, vectors
 
 
 def _feedback() -> None:
@@ -75,24 +36,6 @@ def _feedback() -> None:
                 st.session_state["anonymous_session_id"],
             )
             st.success("Thanks. Your feedback was saved without the question text.")
-
-
-def _request_error_message(error: Exception) -> str:
-    if isinstance(error, (AnswerGenerationError, EmbeddingError)):
-        return (
-            "The Gemini service could not complete this request. Check that the local "
-            "Gemini settings and service are available, then retry."
-        )
-    if isinstance(error, RetrievalError):
-        return (
-            "The local source index could not be used. Retry; if the problem continues, "
-            "rebuild it with `python scripts/build_index.py`."
-        )
-    if isinstance(error, PDFProcessingError):
-        return "The source PDF could not be read. Check the configured PDF, then retry."
-    if isinstance(error, UnsupportedQuestionError):
-        return NO_PASSAGES_MESSAGE
-    return "A temporary problem prevented this request from completing. Please retry."
 
 
 def _process_question(
@@ -117,41 +60,16 @@ def _process_question(
     if not question:
         return
 
-    decision = assess_question(question)
-    if decision.route != Route.NORMAL:
-        state["answer"] = decision.response
-        state["passages"] = []
-        state["safety_route"] = decision.route.value
-        return
-
     try:
-        provider, chunks, vectors = get_index()
-        passages = retrieve(
-            question,
-            chunks,
-            vectors,
-            provider,
-            top_k=RETRIEVAL_TOP_K,
-            min_similarity=RETRIEVAL_MIN_SIMILARITY,
-        )
-        if not passages:
-            state["answer"] = NO_PASSAGES_MESSAGE
-            state["passages"] = []
-            return
-
-        state["answer"] = generate_answer(question, passages)
-        state["passages"] = passages
-    except (
-        PDFProcessingError,
-        RetrievalError,
-        EmbeddingError,
-        AnswerGenerationError,
-        UnsupportedQuestionError,
-        OSError,
-    ) as exc:
+        result = ask_backend(question)
+        state["answer"] = result["answer"]
+        state["passages"] = result["passages"]
+        if result.get("safety_route"):
+            state["safety_route"] = result["safety_route"]
+    except BackendClientError as exc:
         state["answer"] = REQUEST_FAILURE_MESSAGE
         state["passages"] = []
-        state["request_error"] = _request_error_message(exc)
+        state["request_error"] = str(exc)
 
 
 def _retry_question() -> None:
@@ -175,19 +93,24 @@ def _render_answer_controls() -> None:
     if simplify_col.button("Simplify Answer", key="quick_simplify"):
         with st.spinner("Simplifying while retaining citations..."):
             try:
-                st.session_state["simplified_answer"] = simplify_answer(answer, passages)
+                st.session_state["simplified_answer"] = run_backend_action(
+                    "simplify",
+                    st.session_state["question"],
+                    answer,
+                )
                 st.session_state["control_error"] = ""
-            except AnswerGenerationError as exc:
-                st.session_state["control_error"] = _request_error_message(exc)
+            except BackendClientError as exc:
+                st.session_state["control_error"] = str(exc)
     if alternative_col.button("Suggest an Alternative", key="quick_alternative"):
         with st.spinner("Checking for another source-supported approach..."):
             try:
-                st.session_state["alternative_answer"] = suggest_alternative(
-                    st.session_state["question"], passages
+                st.session_state["alternative_answer"] = run_backend_action(
+                    "alternative",
+                    st.session_state["question"],
                 )
                 st.session_state["control_error"] = ""
-            except (AnswerGenerationError, UnsupportedQuestionError) as exc:
-                st.session_state["control_error"] = _request_error_message(exc)
+            except BackendClientError as exc:
+                st.session_state["control_error"] = str(exc)
     if sources_col.button(
         "Hide Sources" if st.session_state.get("show_sources") else "Show Sources",
         key="quick_sources",
@@ -250,7 +173,7 @@ def main() -> None:
     )
     st.info(
         "Privacy: PDF text, chunks, the saved index, and cosine ranking stay on this "
-        "computer. With configured Gemini embeddings, book chunks and submitted questions "
+        "computer and are processed by the Python backend. With configured Gemini embeddings, book chunks and submitted questions "
         "are sent to Gemini for embeddings; ordinary questions and retrieved excerpts "
         "are also sent for answer generation. Feedback stores only a timestamp, random "
         "session ID, category, and generic technical label; it does not save question text."

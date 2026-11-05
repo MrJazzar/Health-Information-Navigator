@@ -81,10 +81,30 @@ for current availability and pricing.
 
 ## Build and run
 
+Build or refresh the local source index when it is missing or stale:
+
 ```powershell
 python scripts/build_index.py
+```
+
+Start the backend in the first PowerShell terminal:
+
+```powershell
+python -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+In a second PowerShell terminal:
+
+```powershell
 streamlit run app.py
 ```
+
+The Streamlit app sends questions and answer-control actions to this local API.
+Check backend readiness at `http://127.0.0.1:8000/health` and open its interactive
+API page at `http://127.0.0.1:8000/docs`. The API listens on loopback by default;
+do not expose it to a public network without adding appropriate authentication and
+deployment safeguards. Set `BACKEND_URL` in the local environment if the API uses
+a different address.
 
 The index is stored locally in `storage\index.json`; inspectable chunks are written to
 `storage\chunks.jsonl`. The index includes the source PDF hash and embedding
@@ -159,9 +179,9 @@ See [the conversation flow](docs/conversation_flow.md),
 [system architecture](docs/system_architecture.md), and
 [Shneiderman's Eight Golden Rules checklist](docs/shneiderman_golden_rules.md).
 The [Gemini backend demonstration report](docs/gemini_backend_demo.md) records the
-successful live response from the Python backend. The source PDF and Gemini index are
-available and validated, and the full test suite passed (42 tests). Human review of the
-generated response is still pending; see the report for the response and run details.
+previous successful generation call and includes instructions for demonstrating the
+local HTTP API. The source PDF and Gemini index were previously validated, and human
+review of the recorded response is still pending.
 
 ## Troubleshooting
 

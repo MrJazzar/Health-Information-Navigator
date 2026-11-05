@@ -2,9 +2,10 @@
 
 ## Status
 
-- Backend integration exists: **Yes**. `src/answer_generator.py` creates the official Google Gen AI client from configuration and calls `client.models.generate_content` with `GEMINI_MODEL`.
-- Live model call attempted: **Yes**.
-- Live model call succeeded: **Yes**.
+- Python model integration exists: **Yes**. `src/answer_generator.py` creates the official Google Gen AI client from configuration and calls `client.models.generate_content` with `GEMINI_MODEL`.
+- Local HTTP API exists: **Yes**, in `api.py`; Streamlit sends question and answer-control requests through it.
+- Historical live model call attempted and succeeded: **Yes**, through `src.answer_generator.generate_answer` before the HTTP API was added.
+- Live model call through the new HTTP endpoint: **Not yet recorded**. Use the instructions below to make and record a new `/api/ask` request if the check-in requires evidence of the separate HTTP service.
 - Human review completed: **No; pending**.
 
 ## Readiness check
@@ -57,5 +58,45 @@ The valid Gemini index above was produced and its provider ID, source hash, chun
 1. Keep the API key only in the ignored local `.env`; never paste it into source, documentation, a prompt log, or terminal output.
 2. The current PDF and Gemini-backed index are ready. Rebuild only after changing the PDF, chunk settings, provider, or embedding model; Gemini embedding requests may use quota.
 3. Use the existing response above as the demonstration record. Mark human review complete only after a person reviews the answer against page 77 and records their decision.
+
+## Demonstrate through the local HTTP backend
+
+The Streamlit interface now sends question and answer-control requests through a
+separate local FastAPI backend. To show the backend call live:
+
+1. In PowerShell terminal 1, from the project root, run:
+
+   ```powershell
+   python -m uvicorn api:app --host 127.0.0.1 --port 8000
+   ```
+
+2. In PowerShell terminal 2, start the interface:
+
+   ```powershell
+   streamlit run app.py
+   ```
+
+3. Open `http://127.0.0.1:8000/docs` to show the API, or submit a normal
+   educational question in Streamlit. The interface sends `POST /api/ask`; the
+   backend performs safety checks, retrieval, and (when relevant) the Gemini
+   generation call, then returns the answer and source metadata.
+
+4. To show a live API request without relying on the browser interface, run this
+   from PowerShell:
+
+   ```powershell
+   Invoke-RestMethod -Method Post `
+     -Uri http://127.0.0.1:8000/api/ask `
+     -ContentType 'application/json' `
+     -Body '{"question":"According to the source, what are the first three steps for supporting a peer?"}'
+   ```
+
+The API is a local development service bound to loopback; do not expose it to a
+public network. A safety-routed question returns a local response and does not call
+Gemini. A normal question may send the query and retrieved excerpts to the configured
+Gemini service. Keep the key in `.env`, never in the request or terminal history.
+The historical successful call above was made through the Python generation module
+before the HTTP API was added; a newly recorded live HTTP response should be labeled
+separately rather than described as that historical run.
 
 The app's privacy notice applies: a normal question and retrieved excerpts are sent to Gemini for answer generation. Safety-routed questions are handled locally. The source citations are attached from retrieved page metadata and still need human content review.
