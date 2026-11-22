@@ -91,7 +91,7 @@ def _render_answer_controls() -> None:
 
     simplify_col, alternative_col, sources_col = st.columns(3)
     if simplify_col.button("Simplify Answer", key="quick_simplify"):
-        with st.spinner("Simplifying while retaining citations..."):
+        with st.spinner("Status: Rewriting the answer in simpler, easier-to-read language..."):
             try:
                 st.session_state["simplified_answer"] = run_backend_action(
                     "simplify",
@@ -102,7 +102,7 @@ def _render_answer_controls() -> None:
             except BackendClientError as exc:
                 st.session_state["control_error"] = str(exc)
     if alternative_col.button("Suggest an Alternative", key="quick_alternative"):
-        with st.spinner("Checking for another source-supported approach..."):
+        with st.spinner("Status: Searching textbook sources for an alternative answer..."):
             try:
                 st.session_state["alternative_answer"] = run_backend_action(
                     "alternative",
@@ -153,10 +153,165 @@ def _sidebar() -> None:
         if section != "Ask a question":
             st.caption("Choose **Ask a question** to return to the navigator.")
 
+        # --- Accessibility Settings in Sidebar ---
+        st.markdown("---")
+        st.subheader("♿ Accessibility Settings")
+
+        default_size_idx = 1 if st.session_state.get("alex_preset_applied") else 0
+        default_spacing = bool(st.session_state.get("alex_preset_applied", False))
+
+        font_size_choice = st.radio(
+            "Text Size",
+            options=["Normal (16px)", "Large (18px)", "Extra Large (20px)"],
+            index=default_size_idx,
+            key="a11y_font_size",
+            help="Adjust text size for easier reading.",
+        )
+
+        size_map = {
+            "Normal (16px)": "16px",
+            "Large (18px)": "18px",
+            "Extra Large (20px)": "20px",
+        }
+        selected_size = size_map[font_size_choice]
+
+        high_readability = st.checkbox(
+            "Increase Line & Letter Spacing",
+            value=default_spacing,
+            key="a11y_spacing",
+            help="Adds extra spacing between lines and letters to reduce visual crowding.",
+        )
+
+        line_height = "1.8" if high_readability else "1.5"
+        letter_spacing = "0.05em" if high_readability else "normal"
+
+        st.markdown(
+            f"""
+            <style>
+            .stMarkdown p, .stMarkdown li, .stTextArea textarea, .stAlert {{
+                font-size: {selected_size} !important;
+                line-height: {line_height} !important;
+                letter-spacing: {letter_spacing} !important;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _render_onboarding() -> None:
+    """Three-stage onboarding for first-time users."""
+
+    if st.session_state.get("onboarding_completed", False):
+        if st.button("Replay onboarding"):
+            st.session_state["onboarding_stage"] = 1
+            st.session_state["onboarding_completed"] = False
+            st.rerun()
+        return
+
+    if "onboarding_stage" not in st.session_state:
+        st.session_state["onboarding_stage"] = 1
+
+    st.markdown("## Welcome to Mental Health Navigator")
+    st.write(
+        "Let's learn how to use the chatbot safely "
+        "and find reliable mental health information."
+    )
+
+    persona = st.selectbox(
+        "Choose your profile",
+        [
+            "Omar - Simple guidance",
+            "Sara - Privacy focused",
+            "Alex - Sources and reading flexibility",
+        ],
+        key="selected_persona",
+    )
+
+    # Auto-apply dyslexia-friendly reading defaults when Alex is chosen
+    if persona.startswith("Alex") and not st.session_state.get("alex_preset_applied"):
+        st.session_state["alex_preset_applied"] = True
+        st.rerun()
+    elif not persona.startswith("Alex") and st.session_state.get("alex_preset_applied"):
+        st.session_state["alex_preset_applied"] = False
+        st.rerun()
+
+    st.progress(st.session_state["onboarding_stage"] / 3)
+
+    stage = st.session_state["onboarding_stage"]
+
+    if stage == 1:
+        st.subheader("Stage 1: The system does it")
+        st.write(
+            "Watch the chatbot answer a real question "
+            "and explain where its information comes from."
+        )
+
+        if st.button("Show me an example"):
+            with st.spinner("Status: Running example question and retrieving cited textbook passages..."):
+                _process_question(
+                    "What are some ways students can manage academic stress?"
+                )
+
+        if st.button("Next: Let's try together"):
+            st.session_state["onboarding_stage"] = 2
+            st.rerun()
+
+    elif stage == 2:
+        st.subheader("Stage 2: Co-pilot")
+        st.write(
+            "Now try asking a question. You can use "
+            "one of these examples or write your own."
+        )
+
+        suggested = st.selectbox(
+            "Suggested questions",
+            [
+                "How can I support a stressed friend?",
+                "What is student wellbeing?",
+                "How can students find mental health support?",
+            ],
+            key="guided_question",
+        )
+
+        user_question = st.text_input(
+            "Your question",
+            value=suggested,
+            key="guided_input",
+        )
+
+        if st.button("Ask the chatbot"):
+            with st.spinner("Status: Checking safety rules and searching textbook sources..."):
+                _process_question(user_question)
+
+        if st.button("Next: Use it yourself"):
+            st.session_state["onboarding_stage"] = 3
+            st.rerun()
+
+    elif stage == 3:
+        st.subheader("Stage 3: You do it")
+        st.success("You're ready to use Mental Health Navigator!")
+
+        st.write(
+            "You can now ask your own questions. "
+            "You can always inspect sources, simplify answers, "
+            "or request an alternative."
+        )
+
+        st.info(
+            f"Your selected profile: {persona}. "
+            "You can change your preferences whenever you need."
+        )
+
+        if st.button("Finish onboarding"):
+            st.session_state["onboarding_completed"] = True
+            st.rerun()
+
 
 def main() -> None:
     st.set_page_config(page_title="Mental Health Navigator")
     _sidebar()
+
     if "anonymous_session_id" not in st.session_state:
         st.session_state["anonymous_session_id"] = anonymous_session_id()
 
@@ -178,7 +333,7 @@ def main() -> None:
         "are also sent for answer generation. Feedback stores only a timestamp, random "
         "session ID, category, and generic technical label; it does not save question text."
     )
-
+    _render_onboarding()
     with st.form("question_form"):
         question = st.text_area(
             "What would you like to know?",
@@ -189,6 +344,9 @@ def main() -> None:
             "Example topics: stress, wellbeing, peer support, or how to seek help. "
             "Avoid sharing identifying or sensitive personal details."
         )
+        st.caption(
+            "⌨️ Keyboard tip: Press Tab to move between buttons, and Ctrl+Enter inside the text box to submit your question."
+        )
         submitted = st.form_submit_button("Find information")
 
     if submitted:
@@ -196,7 +354,7 @@ def main() -> None:
             _process_question(question)
             st.warning("Enter a question to get started.")
         else:
-            with st.spinner("Checking your question and preparing a grounded answer..."):
+            with st.spinner("Status: Checking safety rules, searching textbook sources, and generating your answer..."):
                 _process_question(question)
 
     if st.session_state.get("request_error"):
@@ -216,6 +374,7 @@ def main() -> None:
             st.info("This request was handled locally; it was not sent to Gemini.")
         if st.session_state.get("passages"):
             _render_answer_controls()
+
             with st.expander(
                 "How was this answer generated? Show sources",
                 expanded=st.session_state.get("show_sources", False),
@@ -224,14 +383,14 @@ def main() -> None:
                     "Retrieved passages are evidence excerpts. Similarity scores are "
                     "ranking aids, not probabilities or calibrated confidence."
                 )
-                for passage in st.session_state["passages"]:
+                for idx, passage in enumerate(st.session_state["passages"], start=1):
                     st.markdown(
-                        f"**{passage['source_filename']} — book page "
+                        f"**Source {idx} — {passage['source_filename']} — book page "
                         f"{passage['page_start']} (PDF page "
                         f"{passage.get('pdf_page_start', passage['page_start'])})** · similarity "
                         f"`{passage['similarity']:.3f}`"
                     )
-                    st.write(passage["text"])
+                    st.info(passage["text"])
             _feedback()
 
     with st.expander("Privacy and local data controls"):
